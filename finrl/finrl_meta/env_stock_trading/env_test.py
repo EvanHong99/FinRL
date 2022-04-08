@@ -81,7 +81,7 @@ class StockTradingEnv(gym.Env):
                         [
                             self.data[tech].values.tolist()
                             for tech in self.tech_indicator_list
-                        ], #当天各股票因子list
+                        ], #当天各股票因子list，shape==tech num*data len？
                         [],
                     )
                 ) # append initial stocks_share to initial state, instead of all zero 
@@ -105,6 +105,14 @@ class StockTradingEnv(gym.Env):
         self._seed()
 
     def _sell_stock(self, index, action):
+        """We use an action space {-k,…,-1, 0, 1, …, k}, 
+        where k denotes the number of shares to buy and -k denotes the number of shares to sell. 
+        For example, "Buy 10 shares of AAPL" or "Sell 10 shares of AAPL" are 10 or -10, respectively. The continuous action space needs to be normalized to [-1, 1], since the policy is defined on a Gaussian distribution, which needs to be normalized and symmetric.
+
+        Args:
+            index (_type_): _description_
+            action (_type_): _description_
+        """
         def _do_sell_normal():
             if self.state[index + 2*self.stock_dim + 1]!=True : # check if the stock is able to sell, for simlicity we just add it in techical index
             # if self.state[index + 1] > 0: # if we use price<0 to denote a stock is unable to trade in that day, the total asset calculation may be wrong for the price is unreasonable
@@ -210,6 +218,14 @@ class StockTradingEnv(gym.Env):
         plt.close()
 
     def step(self, actions):
+        """_summary_
+
+        Args:
+            actions (list): 应该是类似于list的列表，下标表示进行操作的股票index，数值表示买入/卖出数量
+
+        Returns:
+            _type_: _description_
+        """
         self.terminal = self.day >= len(self.df.index.unique()) - 1
 
         if self.terminal:
@@ -339,7 +355,7 @@ class StockTradingEnv(gym.Env):
             )
             self.asset_memory.append(end_total_asset)
             self.date_memory.append(self._get_date())
-            self.reward = end_total_asset - begin_total_asset-100*len(buy_index)
+            self.reward = end_total_asset - begin_total_asset-100*len(sell_index)
             self.rewards_memory.append(self.reward)
             self.reward = self.reward * self.reward_scaling
             self.state_memory.append(self.state) # add current state in state_recorder for each step
