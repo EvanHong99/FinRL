@@ -9,7 +9,8 @@ from gym.utils import seeding
 from stable_baselines3.common.vec_env import DummyVecEnv
 from typing import List
 matplotlib.use("Agg")
-
+# mycode
+TEST=True
 # from stable_baselines3.common.logger import Logger, KVWriter, CSVOutputFormat
 
 
