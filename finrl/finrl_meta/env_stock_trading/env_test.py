@@ -1,3 +1,4 @@
+# encoding=utf-8
 import gym
 import matplotlib
 import matplotlib.pyplot as plt
@@ -8,7 +9,7 @@ from gym.utils import seeding
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 matplotlib.use("Agg")
-
+test=True
 # from stable_baselines3.common.logger import Logger, KVWriter, CSVOutputFormat
 
 
@@ -49,16 +50,16 @@ class StockTradingEnv(gym.Env):
         self.initial_amount = initial_list[0] # get the initial cash
         self.buy_cost_pct = buy_cost_pct
         self.sell_cost_pct = sell_cost_pct
-        self.reward_scaling = reward_scaling
+        self.reward_scaling = reward_scaling # 1e-4
         self.state_space = state_space
         self.action_space = action_space
-        self.tech_indicator_list = tech_indicator_list
         self.action_space = spaces.Box(low=-1, high=1, shape=(self.action_space,))
+        self.tech_indicator_list = tech_indicator_list
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(self.state_space,)
         )
         self.data = self.df.loc[self.day, :]
-        self.terminal = False
+        self.terminal = False #是否结束
         self.make_plots = make_plots
         self.print_verbosity = print_verbosity
         self.turbulence_threshold = turbulence_threshold
@@ -69,7 +70,23 @@ class StockTradingEnv(gym.Env):
         self.mode = mode
         self.iteration = iteration
         # initalize state
-        self.state = self._initiate_state()
+        '''
+                # for multiple stock
+                # 将所有东西转换成一个list表示的state
+                state = (
+                    [self.initial_amount] # 初始空余资金
+                    + self.data.close.values.tolist() #data[self.day]当天股票价格
+                    + self.initial_list[1:] #初始各股票持有share
+                    + sum(
+                        [
+                            self.data[tech].values.tolist()
+                            for tech in self.tech_indicator_list
+                        ], #当天各股票因子list
+                        [],
+                    )
+                ) # append initial stocks_share to initial state, instead of all zero 
+        '''
+        self.state = self._initiate_state() #
 
         # initialize reward
         self.reward = 0
@@ -98,6 +115,7 @@ class StockTradingEnv(gym.Env):
                     sell_num_shares = min(
                         abs(action), self.state[index + self.stock_dim + 1]
                     )
+                    # 卖的钱
                     sell_amount = (
                         self.state[index + 1]
                         * sell_num_shares
@@ -192,8 +210,8 @@ class StockTradingEnv(gym.Env):
         plt.close()
 
     def step(self, actions):
-        # print(f"actions in step {actions}")
         self.terminal = self.day >= len(self.df.index.unique()) - 1
+
         if self.terminal:
             # print(f"Episode: {self.episode}")
             if self.make_plots:
@@ -274,7 +292,6 @@ class StockTradingEnv(gym.Env):
             # logger.record("environment/total_trades", self.trades)
 
             return self.state, self.reward, self.terminal, {}
-
         else:
             actions = actions * self.hmax  # actions initially is scaled between 0 to 1
             actions = actions.astype(
@@ -284,8 +301,8 @@ class StockTradingEnv(gym.Env):
                 if self.turbulence >= self.turbulence_threshold:
                     actions = np.array([-self.hmax] * self.stock_dim)
             begin_total_asset = self.state[0] + sum(
-                np.array(self.state[1 : (self.stock_dim + 1)])
-                * np.array(self.state[(self.stock_dim + 1) : (self.stock_dim * 2 + 1)])
+                np.array(self.state[1 : (self.stock_dim + 1)]) # 当天self.day收盘价
+                * np.array(self.state[(self.stock_dim + 1) : (self.stock_dim * 2 + 1)]) #每个个股的持股数
             )
             # print("begin_total_asset:{}".format(begin_total_asset))
 
@@ -322,13 +339,13 @@ class StockTradingEnv(gym.Env):
             )
             self.asset_memory.append(end_total_asset)
             self.date_memory.append(self._get_date())
-            self.reward = end_total_asset - begin_total_asset
+            self.reward = end_total_asset - begin_total_asset-100*len(buy_index)
             self.rewards_memory.append(self.reward)
             self.reward = self.reward * self.reward_scaling
             self.state_memory.append(self.state) # add current state in state_recorder for each step
 
         return self.state, self.reward, self.terminal, {}
-
+        
     def reset(self):
         # initiate state
         self.state = self._initiate_state()
@@ -367,15 +384,16 @@ class StockTradingEnv(gym.Env):
             # For Initial State
             if len(self.df.tic.unique()) > 1:
                 # for multiple stock
+                # 将所有东西转换成一个list表示的state
                 state = (
-                    [self.initial_amount]
-                    + self.data.close.values.tolist()
-                    + self.initial_list[1:]
+                    [self.initial_amount] # 初始空余资金
+                    + self.data.close.values.tolist() #data[self.day]当天股票价格
+                    + self.initial_list[1:] #初始各股票持有share
                     + sum(
                         [
                             self.data[tech].values.tolist()
                             for tech in self.tech_indicator_list
-                        ],
+                        ], #当天各股票因子list
                         [],
                     )
                 ) # append initial stocks_share to initial state, instead of all zero 
@@ -506,3 +524,28 @@ class StockTradingEnv(gym.Env):
         e = DummyVecEnv([lambda: self])
         obs = e.reset()
         return e, obs
+
+
+# Streaming output truncated to the last 5000 lines.
+# actions in step [-0.1783969  0.7176521]
+# actions in step [0.12283203 0.23639394]
+# actions in step [-1. -1.]
+# actions in step [ 0.5086391 -0.5585535]
+# actions in step [ 0.65995204 -0.80262953]
+# actions in step [ 0.655211 -1.      ]
+# actions in step [ 0.67246556 -0.9702243 ]
+# actions in step [1.         0.01292537]
+# actions in step [-1.          0.09557958]
+# actions in step [0.15242529 0.20743884]
+# actions in step [0.58685267 1.        ]
+# actions in step [-0.02940753 -1.        ]
+# actions in step [1.         0.07644849]
+# actions in step [ 1.        -0.5155239]
+# actions in step [ 0.5126176 -0.1305682]
+# actions in step [-0.24939942  0.22324024]
+# actions in step [-1.          0.02099888]
+# actions in step [1.         0.34709275]
+# actions in step [ 1. -1.]
+# actions in step [-1.  1.]
+# actions in step [1.         0.21426173]
+# actions in step [-0.6563884 -1.       ]
