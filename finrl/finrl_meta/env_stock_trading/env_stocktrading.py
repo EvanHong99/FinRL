@@ -210,6 +210,7 @@ class StockTradingEnv(gym.Env):
         plt.close()
 
     def step(self, actions):
+        # print(f"actions in step {actions}")
         self.terminal = self.day >= len(self.df.index.unique()) - 1
         if self.terminal:
             # print(f"Episode: {self.episode}")
