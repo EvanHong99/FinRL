@@ -52,22 +52,27 @@ Feel free to leave us feedback: report bugs using `Github issues`_ or discuss Fi
    
    start/introduction
    start/first_glance
+   start/installation
+   start/quick_start
    
 
 .. toctree::
    :maxdepth: 2
-   :caption: User Guide
+   :caption: Architecture
    
-   user/installation
-   user/quick_start
-   user/key_concept
-   user/DRL_in_stock_trading
-   user/tutorials
+   architecture/three_layer
+   architecture/file_architecture
+
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Turorial
+
+   tutorial/tutorials
    
    
 .. toctree::
    :maxdepth: 1
    :caption: Developer Guide
 
-   developer/structure
-   developer/development_setup
+   developer_guide/development_setup
