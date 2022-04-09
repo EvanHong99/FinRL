@@ -106,6 +106,11 @@ class StockTradingEnv(gym.Env):
         self._seed()
 
     def _sell_stock(self, index, action):
+        """
+        :params action, int, sell num of shares
+
+        :return sell_num_shares, a positive value
+        """
         def _do_sell_normal():
             if self.state[index + 2*self.stock_dim + 1]!=True : # check if the stock is able to sell, for simlicity we just add it in techical index
             # if self.state[index + 1] > 0: # if we use price<0 to denote a stock is unable to trade in that day, the total asset calculation may be wrong for the price is unreasonable
@@ -210,6 +215,15 @@ class StockTradingEnv(gym.Env):
         plt.savefig("results/account_value_trade_{}.png".format(self.episode))
         plt.close()
 
+    def _calc_exposure(self,actions):
+        """
+        计算风险暴露，并在reward加入penalty
+        actions in step [-0.1783969  0.7176521]
+        后面*100再取整就是买入卖出的股票数量
+
+        """
+        return 
+
     def step(self, actions):
         # print(f"actions in step {actions}")
         self.terminal = self.day >= len(self.df.index.unique()) - 1
@@ -308,7 +322,9 @@ class StockTradingEnv(gym.Env):
             )
             # print("begin_total_asset:{}".format(begin_total_asset))
 
+            #np.argsort([-70,  31,  -7, -91,   0]) => array([3, 0, 2, 4, 1])
             argsort_actions = np.argsort(actions)
+            # 为什么不直接使用np.where的结果，是为了保持顺序？
             sell_index = argsort_actions[: np.where(actions < 0)[0].shape[0]]
             buy_index = argsort_actions[::-1][: np.where(actions > 0)[0].shape[0]]
 
@@ -341,11 +357,21 @@ class StockTradingEnv(gym.Env):
             )
             self.asset_memory.append(end_total_asset)
             self.date_memory.append(self._get_date())
-            self.reward = end_total_asset - begin_total_asset
+            self.reward = end_total_asset - begin_total_asset# 获得的利润值
             self.rewards_memory.append(self.reward)
-            self.reward = self.reward * self.reward_scaling
+            self.reward = self.reward * self.reward_scaling # 或许是为了使得结果不要太大，每次的收益也就几块钱几十块钱，放缩后就是0.01级别，方便梯度下降？
+            # mycode exposure penalty
+            # self.reward -= abs(sum(actions))
             self.state_memory.append(self.state) # add current state in state_recorder for each step
-
+        # print(f"self.reward in step {self.reward}")
+        # self.reward in step 0.006148119274992496
+        # self.reward in step -0.0008418249999987893
+        # self.reward in step 0.04269511025000829
+        # self.reward in step 0.022832062799984124
+        # self.reward in step -0.014518103500001598
+        # self.reward in step -0.006606224324984942
+        # self.reward in step -0.05840524760000408
+        # self.reward in step 0.008869894000003115
         return self.state, self.reward, self.terminal, {}
 
     def reset(self):
