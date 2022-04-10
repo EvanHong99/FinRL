@@ -10,7 +10,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 from typing import List
 matplotlib.use("Agg")
 # mycode
-TEST=True
+TEST=False
 # from stable_baselines3.common.logger import Logger, KVWriter, CSVOutputFormat
 
 
@@ -42,6 +42,8 @@ class StockTradingEnv(gym.Env):
         model_name="",
         mode="",
         iteration="",
+        # mycode
+        short_share_limit=1e4,#1万
     ):
         self.day = day
         self.df = df
@@ -66,6 +68,7 @@ class StockTradingEnv(gym.Env):
         self.turbulence_threshold = turbulence_threshold
         self.risk_indicator_col = risk_indicator_col
         self.initial = initial
+        if TEST: print(f"self.initial in init() {self.initial}")
         self.previous_state = previous_state
         self.model_name = model_name
         self.mode = mode
@@ -105,22 +108,30 @@ class StockTradingEnv(gym.Env):
         # self.reset()
         self._seed()
 
-    def _sell_stock(self, index, action):
+        # mycode
+        self.short_share_limit=short_share_limit
+        self.score_rewards_memory=[]
+        self.penalties_memory=[]
+
+    def _sell_stock(self, index, action:int):
         """
         :params action, int, sell num of shares
 
         :return sell_num_shares, a positive value
         """
+        assert action<=0
         def _do_sell_normal():
             if self.state[index + 2*self.stock_dim + 1]!=True : # check if the stock is able to sell, for simlicity we just add it in techical index
             # if self.state[index + 1] > 0: # if we use price<0 to denote a stock is unable to trade in that day, the total asset calculation may be wrong for the price is unreasonable
                 # Sell only if the price is > 0 (no missing data in this particular date)
                 # perform sell action based on the sign of the action
-                if self.state[index + self.stock_dim + 1] > 0:
-                    # Sell only if current asset is > 0
-                    sell_num_shares = min(
-                        abs(action), self.state[index + self.stock_dim + 1]
-                    )
+                # 有可以卖空的空间
+                if self.state[index + self.stock_dim + 1] > -self.short_share_limit:
+                    if self.state[index + self.stock_dim + 1]+action<0:
+                        if self.day<10:
+                            print("going short")
+                    
+                    sell_num_shares = min(abs(action),self.state[index + self.stock_dim + 1] +self.short_share_limit)
                     # 卖的钱
                     sell_amount = (
                         self.state[index + 1]
@@ -136,11 +147,17 @@ class StockTradingEnv(gym.Env):
                     )
                     self.trades += 1
                 else:
+                    print(f"going short hits the limit {self.state[index + self.stock_dim + 1]} {action}")
                     sell_num_shares = 0
             else:
                 sell_num_shares = 0
 
             return sell_num_shares
+
+
+        def _do_sell_go_short():
+            pass
+
 
         # perform sell action based on the sign of the action
         if self.turbulence_threshold is not None:
@@ -175,6 +192,7 @@ class StockTradingEnv(gym.Env):
         return sell_num_shares
 
     def _buy_stock(self, index, action):
+        assert action >=0
         def _do_buy():
             if self.state[index + 2*self.stock_dim+ 1] !=True: # check if the stock is able to buy
             # if self.state[index + 1] >0:
@@ -215,14 +233,16 @@ class StockTradingEnv(gym.Env):
         plt.savefig("results/account_value_trade_{}.png".format(self.episode))
         plt.close()
 
-    def _calc_exposure(self,actions):
+    def _calc_exposure(self,actions=None):
         """
         计算风险暴露，并在reward加入penalty
         actions in step [-0.1783969  0.7176521]
         后面*100再取整就是买入卖出的股票数量
 
         """
-        return 
+        exposure=sum(abs(np.array(self.state_memory[0][1+self.stock_dim:1+2*self.stock_dim])-np.array(self.state_memory[-1][1+self.stock_dim:1+2*self.stock_dim])))
+
+        return exposure
 
     def step(self, actions):
         # print(f"actions in step {actions}")
@@ -269,6 +289,8 @@ class StockTradingEnv(gym.Env):
                 print(f"total_trades: {self.trades}")
                 if df_total_value["daily_return"].std() != 0:
                     print(f"Sharpe: {sharpe:0.3f}")
+                print(f"train reward {self.score_rewards_memory}")
+                print(f"penalties {self.penalties_memory}")
                 print("=================================")
 
             if (self.model_name != "") and (self.mode != ""):
@@ -305,7 +327,11 @@ class StockTradingEnv(gym.Env):
             # logger.record("environment/total_reward_pct", (tot_reward / (end_total_asset - tot_reward)) * 100)
             # logger.record("environment/total_cost", self.cost)
             # logger.record("environment/total_trades", self.trades)
-
+            
+            # mycode
+            # final_exposure=self._calc_exposure()
+            # print(f"final_exposure {final_exposure}")
+            # self.reward-=final_exposure
             return self.state, self.reward, self.terminal, {}
 
         else:
@@ -328,6 +354,7 @@ class StockTradingEnv(gym.Env):
             sell_index = argsort_actions[: np.where(actions < 0)[0].shape[0]]
             buy_index = argsort_actions[::-1][: np.where(actions > 0)[0].shape[0]]
 
+            # 无所谓先买还是卖，因为action都是同时给出的，只是操作不同罢了，但可能会因为买卖函数的区别而有区别
             for index in sell_index:
                 # print(f"Num shares before: {self.state[index+self.stock_dim+1]}")
                 # print(f'take sell action before : {actions[index]}')
@@ -338,6 +365,8 @@ class StockTradingEnv(gym.Env):
             for index in buy_index:
                 # print('take buy action: {}'.format(actions[index]))
                 actions[index] = self._buy_stock(index, actions[index])
+
+
 
             self.actions_memory.append(actions)
 
@@ -360,8 +389,15 @@ class StockTradingEnv(gym.Env):
             self.reward = end_total_asset - begin_total_asset# 获得的利润值
             self.rewards_memory.append(self.reward)
             self.reward = self.reward * self.reward_scaling # 或许是为了使得结果不要太大，每次的收益也就几块钱几十块钱，放缩后就是0.01级别，方便梯度下降？
-            # mycode exposure penalty
-            # self.reward -= abs(sum(actions))
+            # mycode exposure penalty，鼓励多交易
+            self.score_rewards_memory.append(self.reward)
+            penalty=(abs(sum(actions))-sum(abs(actions))*0.1)* self.reward_scaling
+            self.penalties_memory.append(penalty)
+            self.reward -= penalty
+            # final_exposure=self._calc_exposure()* self.reward_scaling
+            # print(f"final_exposure {final_exposure}")
+            # self.reward-=final_exposure
+            # self.reward -= abs(sum(actions))-sum(abs(actions))*0.2
             self.state_memory.append(self.state) # add current state in state_recorder for each step
         # print(f"self.reward in step {self.reward}")
         # self.reward in step 0.006148119274992496
@@ -402,12 +438,20 @@ class StockTradingEnv(gym.Env):
 
         self.episode += 1
 
+        # mycode
+        self.score_rewards_memory=[]
+        self.penalties_memory=[]
+
         return self.state
 
     def render(self, mode="human", close=False):
         return self.state
 
     def _initiate_state(self):
+        if TEST: 
+            print(f"self.initial in _initiate_state() {self.initial}")
+            print(f"self.previous_state {self.previous_state}")
+
         if self.initial:
             # For Initial State
             if len(self.df.tic.unique()) > 1:
@@ -421,7 +465,7 @@ class StockTradingEnv(gym.Env):
                         [
                             self.data[tech].values.tolist()
                             for tech in self.tech_indicator_list
-                        ], #当天各股票因子list
+                        ], #当天各股票因子list，macd在最初几天均为0
                         [],
                     )
                 ) # append initial stocks_share to initial state, instead of all zero 
